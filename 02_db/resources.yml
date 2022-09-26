@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: ${self:service}
+
+Parameters:
+
+  DBInstanceClass:
+    Description: Instance class for RDS
+    Type: String
+    AllowedValues:
+      - db.t3.micro
+      - db.t4g.micro
+    Default: db.t3.micro
+
+  DBAllocatedStorage:
+    Description: Allocated storage size
+    Type: String
+    Default: 20
+
+  DatabaseName:
+    Description: Default database name
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9_]+'
+    Default: wp
+
+Resources:
+
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${AWS::StackName}-subnet-group'
+      DBSubnetGroupDescription: !Ref "AWS::StackName"
+      SubnetIds:
+        Fn::Split:
+          - ','
+          - !ImportValue '${param:commonResourceStackName}:PrivateSubnetIds'
+
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: !Ref DBInstanceClass
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-db'
+      Engine: mysql
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      MasterUsername:
+        !Sub
+          - '{{resolve:secretsmanager:${DbAdminSecret}::username}}'
+          - DbAdminSecret: !ImportValue '${param:commonResourceStackName}:DbAdminSecretId'
+      MasterUserPassword:
+        !Sub
+          - '{{resolve:secretsmanager:${DbAdminSecret}::password}}'
+          - DbAdminSecret: !ImportValue '${param:commonResourceStackName}:DbAdminSecretId'
+      BackupRetentionPeriod: 0
+      VPCSecurityGroups:
+        - !ImportValue '${param:commonResourceStackName}:DbSecurityGroup'
+
+Outputs:
+
+  RdsEndpointAddress:
+    Value: !GetAtt MyDBInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}:RdsEndpointAddress'
+
+  RdsEndpointPort:
+    Value: !GetAtt MyDBInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}:RdsEndpointPort'

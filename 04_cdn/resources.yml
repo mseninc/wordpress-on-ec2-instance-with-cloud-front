@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: ${self:service}
+
+Parameters:
+
+  HostedDomain:
+    Type: String
+    AllowedPattern: '^.+$'
+    Description: Hosted domain without trailing period (e.g. "wp.example.com")
+    Default: ${param:domain}
+
+  OriginDomainName:
+    Type: String
+    AllowedPattern: '^.+$'
+    Description: Origin (WP host) for CloudFront distribution (e.g. "server.wp.example.com")
+    Default: '${param:appServerHostname}.${param:domain}'
+
+  WordPressDomainAlias:
+    Type: String
+    AllowedPattern: '^.+$'
+    Description: Domain alias for CloudFront distribution (e.g. "wordpress.wp.example.com")
+    Default: ${param:wordPressDomainAlias}
+
+  SSLCertificateArn:
+    Type: String
+    AllowedPattern: '^.+$'
+    Description: ARN for existing SSL certificate on ACM
+    Default: ${param:sslCertificateArn}
+
+Resources:
+
+  # S3 bucket for CloudFront logs
+  MyCloudFrontLogS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketName: !Sub '${AWS::StackName}-cf-log-${AWS::Region}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoDelete
+            Status: Enabled
+            ExpirationInDays: 15
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # OriginRequestPolicy to forward X-CLOUDFRONT-FORWARDED-PROTO header
+  MyCloudFrontWordPressOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub "${AWS::StackName}-WordPressOriginRequestPolicy"
+        CookiesConfig:
+          CookieBehavior: all
+        HeadersConfig:
+          HeaderBehavior: allViewerAndWhitelistCloudFront
+          Headers:
+            - CloudFront-Forwarded-Proto
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
+  # CloudFront distribution for WordPress
+  MyCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: 'true'
+        Comment: !Ref "AWS::StackName"
+        PriceClass: PriceClass_200
+        Logging:
+          Bucket: !GetAtt MyCloudFrontLogS3Bucket.DomainName
+        Aliases:
+          - !Ref WordPressDomainAlias
+        Origins:
+          - DomainName: !Ref OriginDomainName
+            Id: !Ref OriginDomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 60
+        DefaultCacheBehavior:
+          TargetOriginId: !Ref OriginDomainName
+          ViewerProtocolPolicy: https-only
+          SmoothStreaming: 'false'
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          Compress: false
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+          OriginRequestPolicyId: !Ref MyCloudFrontWordPressOriginRequestPolicy
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SSLCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  # Route 53 RecordSet
+  MyCloudFrontDNSRecord:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub '${HostedDomain}.'
+      RecordSets:
+        - Name: !Sub '${WordPressDomainAlias}.'
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2 # fixed-value
+            DNSName: !GetAtt MyCloudFrontDistribution.DomainName

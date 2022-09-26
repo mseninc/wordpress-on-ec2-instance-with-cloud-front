@@ -1,0 +1,355 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: ${self:service}
+
+Mappings:
+  RegionMap:
+    'af-south-1':
+      PrefixListCloudFront: 'pl-c0aa4fa9'
+    'eu-north-1':
+      PrefixListCloudFront: 'pl-fab65393'
+    'ap-south-1':
+      PrefixListCloudFront: 'pl-9aa247f3'
+    'eu-west-3':
+      PrefixListCloudFront: 'pl-75b1541c'
+    'eu-west-2':
+      PrefixListCloudFront: 'pl-93a247fa'
+    'eu-south-1':
+      PrefixListCloudFront: 'pl-1bbc5972'
+    'eu-west-1':
+      PrefixListCloudFront: 'pl-4fa04526'
+    'ap-northeast-2':
+      PrefixListCloudFront: 'pl-22a6434b'
+    'me-south-1':
+      PrefixListCloudFront: 'pl-17b2577e'
+    'ap-northeast-1':
+      PrefixListCloudFront: 'pl-58a04531'
+    'sa-east-1':
+      PrefixListCloudFront: 'pl-5da64334'
+    'ca-central-1':
+      PrefixListCloudFront: 'pl-38a64351'
+    'ap-east-1':
+      PrefixListCloudFront: 'pl-14b2577d'
+    'ap-southeast-1':
+      PrefixListCloudFront: 'pl-31a34658'
+    'ap-southeast-2':
+      PrefixListCloudFront: 'pl-b8a742d1'
+    'eu-central-1':
+      PrefixListCloudFront: 'pl-a3a144ca'
+    'us-east-1':
+      PrefixListCloudFront: 'pl-3b927c52'
+    'us-east-2':
+      PrefixListCloudFront: 'pl-b6a144df'
+    'us-west-1':
+      PrefixListCloudFront: 'pl-4ea04527'
+    'us-west-2':
+      PrefixListCloudFront: 'pl-82a045eb'
+
+Parameters:
+
+  VpcCidrBlock:
+    Description: Input a VPC IPv4 CidrBlock
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PublicSubnetCidrBlock1:
+    Type: String
+    Default: 10.0.0.0/20
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PublicSubnetCidrBlock2:
+    Type: String
+    Default: 10.0.16.0/20
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnetCidrBlock1:
+    Type: String
+    Default: 10.0.32.0/20
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnetCidrBlock2:
+    Type: String
+    Default: 10.0.48.0/20
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  SSHSourceCidr:
+    Type: String
+    Default: ${param:sshAllowedCidr}
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  HostedDomain:
+    Type: String
+    Default: ${param:domain}
+
+  AppServerHostname:
+    Type: String
+    Default: ${param:appServerHostname}
+
+Resources:
+
+  # Network
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  # Subnet (Public 1)
+  MyPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnetCidrBlock1
+      AvailabilityZone: !Sub '${AWS::Region}a'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public1'
+
+  # Subnet (Public 2)
+  MyPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnetCidrBlock2
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Sub '${AWS::Region}c'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public2'
+
+  # Subnet (Private 1)
+  MyPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetCidrBlock1
+      AvailabilityZone: !Sub '${AWS::Region}a'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private1'
+
+  # Subnet (Private 2)
+  MyPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetCidrBlock2
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Sub '${AWS::Region}c'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private2'
+
+  MyInternetGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  MyVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref MyInternetGW
+      VpcId: !Ref MyVPC
+
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+      VpcId: !Ref MyVPC
+
+  MyPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGW
+      RouteTableId: !Ref MyRouteTable
+
+  MySubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref MyRouteTable
+      SubnetId: !Ref MyPublicSubnet1
+
+  MySubnetRouteTableAssociation2:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref MyRouteTable
+        SubnetId: !Ref MyPublicSubnet2
+
+  # EFS
+  MyEFS:
+    Type: AWS::EFS::FileSystem
+
+  # EFS mount target
+  MyMountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SubnetId: !Ref MyPublicSubnet1
+      SecurityGroups:
+        - !Ref MySecurityGroupEFS
+
+  # Security Groups for EC2 instance (SSH)
+  MySecurityGroupSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHSourceCidr
+
+  # Security Groups for EC2 instance (HTTP)
+  MySecurityGroupHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !FindInMap ['RegionMap', !Ref 'AWS::Region', 'PrefixListCloudFront']
+
+  # Security Group for EFS (App server => EFS)
+  MySecurityGroupEFS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !GetAtt MyVPC.DefaultSecurityGroup
+
+  # Security Group for RDS (App server => RDS)
+  MySecurityGroupRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow DB
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !GetAtt MySecurityGroupHTTP.GroupId
+
+  # Elastic IP
+  MyServerInstanceEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # Route 53 record
+  MyServerInstanceDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub '${HostedDomain}.'
+      Comment: 'App Server Instance'
+      Name: !Sub '${AppServerHostname}.${HostedDomain}.'
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !Ref MyServerInstanceEIP
+
+  # Key pair for EC2 instance
+  AppServerKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Join ['-', [!Ref 'AWS::StackName', 'AppServerKeyPair']]
+
+  # RDS Credential (admin)
+  DbAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: RDS admin credential
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+Outputs:
+
+  VpcId:
+    Value: !Ref MyVPC
+    Export:
+      Name: !Sub '${AWS::StackName}:VpcId'
+
+  VpcCidrBlock:
+    Value: !GetAtt MyVPC.CidrBlock
+    Export:
+      Name: !Sub '${AWS::StackName}:VpcCidrBlock'
+
+  PublicSubnetIds:
+    Value:
+      !Join
+        - ","
+        - - !Ref MyPublicSubnet1
+          - !Ref MyPublicSubnet2
+    Export:
+      Name: !Sub '${AWS::StackName}:PublicSubnetIds'
+
+  PrivateSubnetIds:
+    Value:
+      !Join
+        - ","
+        - - !Ref MyPrivateSubnet1
+          - !Ref MyPrivateSubnet2
+    Export:
+      Name: !Sub '${AWS::StackName}:PrivateSubnetIds'
+
+  PublicSubnetAvailabilityZone:
+    Value: !GetAtt MyPublicSubnet1.AvailabilityZone
+    Export:
+      Name: !Sub '${AWS::StackName}:PublicSubnetAvailabilityZone'
+
+  InstanceSecurityGroups:
+    Value:
+      Fn::Join:
+        - ','
+        - - !GetAtt MyVPC.DefaultSecurityGroup
+          - !Ref MySecurityGroupSSH
+          - !Ref MySecurityGroupHTTP
+    Export:
+      Name: !Sub '${AWS::StackName}:InstanceSecurityGroups'
+
+  DbSecurityGroup:
+    Value: !Ref MySecurityGroupRDS
+    Export:
+      Name: !Sub '${AWS::StackName}:DbSecurityGroup'
+
+  FileSystemId:
+    Value: !Ref MyEFS
+    Export:
+      Name: !Sub '${AWS::StackName}:FileSystemId'
+
+  EIPAllocationId:
+    Value: !GetAtt MyServerInstanceEIP.AllocationId
+    Export:
+      Name: !Sub '${AWS::StackName}:EIPAllocationId'
+
+  AppServerKeyPairKeyName:
+    Value: !Ref AppServerKeyPair
+    Export:
+      Name: !Sub '${AWS::StackName}:AppServerKeyPairKeyName'
+
+  DbAdminSecretId:
+    Value: !Ref DbAdminSecret
+    Export:
+      Name: !Sub '${AWS::StackName}:DbAdminSecretId'

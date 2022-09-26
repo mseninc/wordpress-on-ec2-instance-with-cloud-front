@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: ${self:service}
+
+Parameters:
+
+  Ec2InstanceType:
+    Type: String
+    Default: t3.micro
+
+Resources:
+
+  MyServerInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: ${param:keyPairName}
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      InstanceType: !Ref Ec2InstanceType
+      AvailabilityZone: !ImportValue '${param:commonResourceStackName}:PublicSubnetAvailabilityZone'
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: !Split [ ',', !ImportValue '${param:commonResourceStackName}:InstanceSecurityGroups' ]
+          SubnetId: !Select [0, !Split [",", !ImportValue '${param:commonResourceStackName}:PublicSubnetIds']]
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-1'
+      UserData:
+        # to debug: `sudo cat /var/log/cloud-init-output.log`
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -x
+              echo '========== start userdata =========='
+              yum update -y
+              echo '---------- installing amazon-efs-utils ----------'
+              yum install --quiet -y amazon-efs-utils
+              echo '---------- mounting efs volume ----------'
+              mkdir /mnt/efs
+              mount -t efs ${EFSId}:/ /mnt/efs
+              chown ec2-user:ec2-user /mnt/efs
+              df -h
+              ls -l /mnt
+              echo '---------- register efs to fstab ----------'
+              sh -c "echo '${EFSId}:/ /mnt/efs efs defaults,_netdev 0 0' >> /etc/fstab"
+              cat /etc/fstab
+              echo '---------- install docker ----------'
+              amazon-linux-extras install -y docker
+              amazon-linux-extras | grep docker
+              systemctl start docker && systemctl status docker
+              systemctl enable docker
+              systemctl is-enabled docker
+              usermod -a -G docker ec2-user
+              docker --version
+              echo '---------- install docker compose ----------'
+              DOCKER_PLUGINS=/usr/local/lib/docker/cli-plugins
+              mkdir -p $DOCKER_PLUGINS
+              curl -L https://github.com/docker/compose/releases/download/v${DockerComposeVersion}/docker-compose-$(uname -s)-$(uname -m) -o $DOCKER_PLUGINS/docker-compose
+              chmod +x $DOCKER_PLUGINS/docker-compose
+              ln -s $DOCKER_PLUGINS/docker-compose /usr/bin/docker-compose
+              docker-compose --version
+              echo '========== end userdata =========='
+            - EFSId: !ImportValue '${param:commonResourceStackName}:FileSystemId'
+              DockerComposeVersion: '2.4.1'
+
+  # Elastic IP association
+  MyEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties: 
+      AllocationId: !ImportValue '${param:commonResourceStackName}:EIPAllocationId'
+      InstanceId: !Ref MyServerInstance1
+

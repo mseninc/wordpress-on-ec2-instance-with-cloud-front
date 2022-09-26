@@ -1,0 +1,22 @@
+service: wp-server
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  logRetentionInDays: 14
+  stage: prod
+  region: us-east-1
+  stackTags:
+    Service: ${param:servicePrefix}
+    Stack: ${self:service}
+    Stage: ${sls:stage}
+    Name: ${self:service}
+
+params:
+  default:
+    servicePrefix: wp
+    keyPairName: '${param:servicePrefix}-common-${sls:stage}-AppServerKeyPair'
+    commonResourceStackName: '${param:servicePrefix}-common-${sls:stage}'
+
+resources: ${file(./resources.yml)}
